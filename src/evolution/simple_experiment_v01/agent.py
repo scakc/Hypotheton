@@ -8,16 +8,36 @@ import numpy as np
 # each batch is converted to a 64 bit binary string which represents connection between all these neurons
 
 class Agent:
-    def __init__(self, hidden_neurons, dna):
+    def __init__(self, hidden_neurons, dna: list):
 
         self.hidden_neurons = hidden_neurons
         self.dna = dna
-        self.initialize(hidden_neurons)
+        self.input_index = {}
+        self.output_index = {}
+        self.hidden_index = {}
+        self.neurons = 0
+        self.weights = {}
+        self.neuron_state = []
+        self.start_nerons = np.array([])
+        self.end_neurons = np.array([])
+        self.age = 0
+        self.long_probe_distance = 5
+        self.responsiveness = 0.8
+        self.oscillator = 0
+        self.x = None
+        self.y = None
         self.direction = 0 # can be 0, 1, 2, 3, 4, 5, 6, 7, 8 for 9 directions
         # where 0 is stay, 1 is west, 2 is north-west, 3 is north, 4 is north-east, 5 is east, 6 is south-east, 7 is south, 8 is south-west
 
-        self.long_probe_distance = 1
-        self.responsiveness = 0.5
+        self.initialize(hidden_neurons)
+        
+    def __getstate__(self):
+        # Return a dictionary representing the object's state
+        return self.__dict__
+
+    def __setstate__(self, state):
+        # Restore the object's state from the given dictionary
+        self.__dict__.update(state)
 
     def initialize(self, hidden_neurons):
         
@@ -173,26 +193,50 @@ class Agent:
 
         return output_action
     
-    def get_position(self):
-        x_location = self.neuron_state[self.input_index["Lx"]]
-        y_location = self.neuron_state[self.input_index["Ly"]]
+    def mutate_dna(self, mutation_rate = 0.01):
+        # pass
+        # mutate dna with a mutation rate
+        new_dna = [str(dna_strain) for dna_strain in self.dna]
+        for i in range(len(self.dna)):
+            if np.random.rand() < mutation_rate:
+                # pass
+                # mutate dna
+                mutation_point = np.random.randint(0, 32)
+                mutation = 1 << mutation_point
+                # print(i, self.dna, mutation, hex(int(self.dna[i], 16) ^ mutation)[2:].zfill(8))
+                new_dna[i] = str(hex(int(self.dna[i], 16) ^ mutation)[2:].zfill(8))
 
-        return x_location, y_location
+        # print("Mutated dna: ", new_dna, "from: ", self.dna)
+
+        self.dna = new_dna
+
+        # reinitialize weights
+        self.weights = self.get_weights()
+    
+    def get_dna(self):
+        return self.dna
+
+    def get_position(self):
+        return self.x, self.y
     
     def set_position(self, x, y):
+        self.x = x
+        self.y = y
         self.neuron_state[self.input_index["Lx"]] = x
         self.neuron_state[self.input_index["Ly"]] = y
 
     def get_oscillator(self):
-        return self.neuron_state[self.input_index["Osc"]]
+        return self.oscillator
     
     def set_oscillator(self, osciallator):
         self.neuron_state[self.input_index["Osc"]] = osciallator
+        self.oscillator = osciallator
 
     def get_age(self):
-        return self.neuron_state[self.input_index["Age"]]
+        return self.age
     
     def set_age(self, age):
+        self.age = age
         self.neuron_state[self.input_index["Age"]] = age
 
     def get_direction(self):

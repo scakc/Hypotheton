@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from agent import Agent
+import multiprocessing
 
 # An env class for evolution experiment 
 # contains a world of 128 x 128 cells
@@ -24,6 +25,7 @@ class SimpleEvolutionEnv:
         self.number_hidden_neurons = number_hidden_neurons
         self.env_type = env_type
         self.generation_count = 0
+        self.population = 0
         self.gene_length = gene_length
 
         # 9 movement directions
@@ -32,15 +34,31 @@ class SimpleEvolutionEnv:
         }
         self.direction_index = {
             # each is corresponding movement in x and y as [x, y]
-            0: [0, 0], 1: [-1, 0], 2: [-1, 1], 3: [0, 1], 4: [1, 1], 5: [1, 0], 6: [1, -1], 7: [0, -1], 8: [-1, -1]
+            0: np.array([0, 0]), 
+            1: np.array([-1, 0]), 
+            2: np.array([-1, 1]), 
+            3: np.array([0, 1]), 
+            4: np.array([1, 1]), 
+            5: np.array([1, 0]), 
+            6: np.array([1, -1]), 
+            7: np.array([0, -1]), 
+            8: np.array([-1, -1])
         }
+
+        self.input_keys = ["Slr", "Sfd", "Sg", "Age", "Rnd", "Blr", "Osc", "Bfd", "Plr", "Pop", "Pfd", "LPf", "LMy", "LBf", "LMx", "BDy", "Gen", "BDx", "Lx", "BD", "Ly"]
+        self.output_keys = ["LPD", "Kill", "OSC", "SG", "Res", "Mfd", "Mrn", "Mrv", "MRL", "MX", "MY"]
 
         self.pheromone_decay_rate = 0.9
         self.reset()
     
-    def reset(self):
+    def reset(self, keep_old_agents = False):
+
+        if keep_old_agents:
+            self.generation_count += 1
+            self.destroy_unsafe_agents()
         
-        self.step = 0
+        self.current_step = 0
+        self.killings = 0
         self.world = np.zeros(self.world_size)
         self.pheromone = np.zeros(self.world_size)
         self.danger = np.zeros(self.world_size)
@@ -48,47 +66,92 @@ class SimpleEvolutionEnv:
         
         # Add danger zone and blockage
         if self.env_type == "simple":
-            self.danger[0:10, 0:10] = 1
-            self.danger[0:10, -10:] = 1
-            self.danger[-10:, 0:10] = 1
-            self.danger[-10:, -10:] = 1
-            self.blockage[0:10, :] = 1
-            self.blockage[-10:, :] = 1
-            self.blockage[:, 0:10] = 1
-            self.blockage[:, -10:] = 1
+            self.danger[:35, -80:] = 1
+            self.danger[-35:, :80] = 1
+            self.danger[45:-45, -80:80] = 1
+            self.blockage[10:70, 30:35] = 1
+            self.blockage[-70:-10, -35:-30] = 1
 
-        self.agents = []
-        # create agents with mutated dna
-        for i in range(self.max_population):
-            random_dna = [format(np.random.randint(0, 16**8, dtype=np.int64) , '08x') for _ in range(self.gene_length)]
-            self.add_agent(Agent(self.number_hidden_neurons, random_dna))
+        dna_bank = []
+        if keep_old_agents:
+            dna_bank = [agent.get_dna() for agent in self.agents]
+        else:
+            dna_bank = [[str(format(np.random.randint(0, 16**8, dtype=np.int64) , '08x')) for _ in range(self.gene_length)] for _ in range(self.max_population)]
 
         # random placement of agents where there is no blockage
+        self.agents = [] 
+        pop_counter = 0
         self.population = 0
-        self.position_agents = {}
-        while self.population < self.max_population:
+        self.position_agents = {} 
+        while pop_counter < self.max_population:
             x = np.random.randint(self.world_size[0])
             y = np.random.randint(self.world_size[1])
-            if self.blockage[x, y] == 0 and self.world[x, y] == 0:
-                self.world[x, y] = 1
-                self.agents[self.population].set_position(x, y)
-                self.position_agents[(x, y)] = self.agents[self.population]
-                self.population += 1
 
-        # def get_gradient(self, property):
-        #     # get gradient of property
-        #     gradient = np.gradient(property)
-        #     return np.sqrt(gradient[0]**2 + gradient[1]**2)
+            if self.blockage[x, y] == 0 and self.world[x, y] == 0:
+                # Create agents with dna
+                dna_agent = dna_bank[np.random.choice(np.arange(0,len(dna_bank)))]
+                # print("Adding agent with dna", dna_agent)
+                self.add_agent(Agent(self.number_hidden_neurons, dna_agent), x, y)
+                pop_counter += 1
+
+            # def get_gradient(self, property):
+            #     # get gradient of property
+            #     gradient = np.gradient(property)
+            #     return np.sqrt(gradient[0]**2 + gradient[1]**2)
+        # print("Count agents", len(self.position_agents), "population", self.population, "killings", self.killings)
+        # assert False
+        
+        return self.get_state()
+
+    def destroy_unsafe_agents(self):
+        # remove agents in danger zone
+        for k, agent in enumerate(self.agents):
+            if self.danger[agent.x, agent.y] == 1:
+                self.remove_agent(agent)
 
     def get_state(self):
-        # computes agent sensory input for each agent
-        # self.pheromone_gradient = 
+
+        # return self.get_state_multi()
+        
+        # pheromone density sum of surrounding 8 cells, requires convolution
+        padded_size = (self.world_size[0] + 2, self.world_size[1] + 2)
+        pheromone_density = np.zeros(padded_size)
+        population_density = np.zeros(padded_size)
+        blockage_density = np.zeros(padded_size)
+        padded_pheromone = np.pad(self.pheromone, ((1, 1), (1, 1)), 'constant', constant_values=(0, 0))
+        padded_population = np.pad(self.world, ((1, 1), (1, 1)), 'constant', constant_values=(0, 0))
+        padded_blockage = np.pad(self.blockage, ((1, 1), (1, 1)), 'constant', constant_values=(0, 0))
+        for i in range(8):
+            pheromone_density += np.roll(padded_pheromone, self.direction_index[i], axis=(0, 1))
+            population_density += np.roll(padded_population, self.direction_index[i], axis=(0, 1))
+            blockage_density += np.roll(padded_blockage, self.direction_index[i], axis=(0, 1))
+
+        self.pheromone_density = pheromone_density[1:-1, 1:-1]
+        self.population_density = population_density[1:-1, 1:-1]
+        self.blockage_density = blockage_density[1:-1, 1:-1]
+
         agent_states = []
         for agent in self.agents:
             agent_features = self.get_features(agent)
             agent_states.append(agent_features)
 
         return agent_states
+
+        # def get_state_multi(self):
+        #     # Computes agent sensory input for each agent
+        #     agent_states = []
+
+        #     # Create a pool of worker processes
+        #     pool = multiprocessing.Pool()
+
+        #     # Process each agent in parallel
+        #     agent_states = pool.map(self.get_features, self.agents)
+
+        #     # Close the pool of worker processes
+        #     pool.close()
+        #     pool.join()
+
+        #     return agent_states
 
     def get_cell_value(self, property, x, y, def_value = 0):
 
@@ -110,7 +173,7 @@ class SimpleEvolutionEnv:
 
         return property[x_start:x_end, y_start:y_end]
 
-    def set_box_value(self, property, x, y, value, box_size = [1,1,1,1]):
+    def add_box_value(self, property, x, y, value, box_size = [1,1,1,1]):
         # set sum of box_size x box_size cells around x, y
 
         x_start = x - box_size[0] if x - box_size[0] >= 0 else 0
@@ -118,82 +181,100 @@ class SimpleEvolutionEnv:
         y_start = y - box_size[2] if y - box_size[2] >= 0 else 0
         y_end = y + box_size[3] if y + box_size[3] < self.world_size[1] else self.world_size[1]
 
-        property[x_start:x_end, y_start:y_end] = value
+        property[x_start:x_end, y_start:y_end] += value
 
     def get_probe_value(self, property, x, y, direction, probe_distance = 5):
 
         probe_values = []
-        for i in range(1, probe_distance + 1):
+        for i in range(1, int(probe_distance) + 1):
             probe_values.append(self.get_cell_value(property, x + i * direction[0], y + i * direction[1]))
 
         return probe_values
 
     def get_features(self, agent):
         
-        x, y = agent.get_position()
-        move_direction = self.direction_index[agent.get_direction()]
+        x, y = agent.x, agent.y
+        move_direction = self.direction_index[agent.direction]
 
         env_features = {}
-        left_move = [-move_direction[1], move_direction[0]]
-        right_move = [move_direction[1], -move_direction[0]]
-        forward_move = move_direction
+
+        move_x = move_direction[0]
+        move_y = move_direction[1]
+
+        # left moves
+        left_x, left_y = x - move_y, y + move_x
+        left_x = (left_x if left_x >= 0 else 0) if left_x < self.world_size[0] else self.world_size[0] - 1
+        left_y = (left_y if left_y >= 0 else 0) if left_y < self.world_size[1] else self.world_size[1] - 1
+        
+        # right moves
+        right_x, right_y = x + move_y, y - move_x
+        right_x = (right_x if right_x >= 0 else 0) if right_x < self.world_size[0] else self.world_size[0] - 1
+        right_y = (right_y if right_y >= 0 else 0) if right_y < self.world_size[1] else self.world_size[1] - 1
+
+        # forward moves
+        forward_x = x + move_x
+        forward_x = (forward_x if forward_x >= 0 else 0) if forward_x < self.world_size[0] else self.world_size[0] - 1
+        forward_y = y + move_y
+        forward_y = (forward_y if forward_y >= 0 else 0) if forward_y < self.world_size[1] else self.world_size[1] - 1
+        forward_x_long = x + int(agent.long_probe_distance) * move_x
+        forward_x_long = (forward_x_long if forward_x_long >= 0 else 0) if forward_x_long < self.world_size[0] else self.world_size[0] - 1
+        forward_y_long = y + int(agent.long_probe_distance) * move_y
+        forward_y_long = (forward_y_long if forward_y_long >= 0 else 0) if forward_y_long < self.world_size[1] else self.world_size[1] - 1
 
         # pheromone gradient left - right
-        left_peromone = self.get_cell_value(self.pheromone, x + left_move[0], y + left_move[1])
-        right_peromone = self.get_cell_value(self.pheromone, x + right_move[0], y + right_move[1])
+        left_peromone = self.pheromone[left_x, left_y]
+        right_peromone = self.pheromone[right_x, right_y]
         env_features["Slr"] = left_peromone - right_peromone
 
         # pheromone gradient forward
-        forward_peromone = self.get_cell_value(self.pheromone, x + forward_move[0], y + forward_move[1])
-        current_peromone = self.get_cell_value(self.pheromone, x, y)
+        forward_peromone = self.pheromone[forward_x, forward_y]
+        current_peromone = self.pheromone[x, y]
         env_features["Sfd"] = current_peromone - forward_peromone
 
-        # pheromone density sum of surrounding 8 cells
-        env_features["Sg"] = self.get_box_value(self.pheromone, x, y).mean()
+        # pheromone density
+        env_features["Sg"] = self.pheromone_density[x, y]
 
         # age
-        env_features["Age"] = agent.get_age()
+        env_features["Age"] = agent.age
 
         # random input
         env_features["Rnd"] = np.random.rand()
 
         # blockage left - right
-        left_blockage = self.get_cell_value(self.blockage, x + left_move[0], y + left_move[1])
-        right_blockage = self.get_cell_value(self.blockage, x + right_move[0], y + right_move[1])
+        left_blockage = self.blockage[left_x, left_y]
+        right_blockage = self.blockage[right_x, right_y]
         env_features["Blr"] = left_blockage - right_blockage # does not work if both are blocked (assuming will never happen)
         
         # oscillator
-        env_features["Osc"] = agent.get_oscillator()
+        env_features["Osc"] = agent.oscillator
 
         # blockage forward
-        env_features["Bfd"] = self.get_cell_value(self.blockage, x + forward_move[0], y + forward_move[1])
+        env_features["Bfd"] = self.blockage[forward_x, forward_y]
 
         # population gradient left - right
-        left_population = self.get_cell_value(self.world, x + left_move[0], y + left_move[1])
-        right_population = self.get_cell_value(self.world, x + right_move[0], y + right_move[1])
+        left_population = self.world[left_x, left_y]
+        right_population = self.world[right_x, right_y]
         env_features["Plr"] = left_population - right_population
 
         # population density sum of surrounding 8 cells
-        env_features["Pop"] = self.get_box_value(self.world, x, y).mean()
+        env_features["Pop"] = self.population_density[x, y]
 
         # population gradient forward
-        forward_population = self.get_cell_value(self.world, x + forward_move[0], y + forward_move[1])
-        current_population = self.get_cell_value(self.world, x, y)
+        forward_population = self.world[forward_x, forward_y]
+        current_population = self.world[x, y]
         env_features["Pfd"] = forward_population - current_population
 
         # population long-range forward
-        agent_long_range = np.round(agent.get_long_probe_distance())
-        env_features["LPf"] = self.get_probe_value(self.world, x, y, forward_move, agent_long_range).sum()
+        env_features["LPf"] = self.population_density[forward_x_long, forward_y_long]
 
         # last movement y
-        current_position = agent.get_position()
-        env_features["LMy"] = y - move_direction[1]
+        env_features["LMy"] = y - move_y
 
         # blockage long-range forward
-        env_features["LBf"] = self.get_probe_value(self.blockage, x, y, forward_move, agent_long_range).sum()
+        env_features["LBf"] = self.blockage_density[forward_x_long, forward_y_long]
 
         # last movement x
-        env_features["LMx"] = x - move_direction[0]
+        env_features["LMx"] = x - move_x
 
         # north/south border distance
         env_features["BDy"] = min(y, self.world_size[1] - y)
@@ -215,23 +296,43 @@ class SimpleEvolutionEnv:
 
         return env_features
 
-    def add_agent(self, agent):
+    def add_agent(self, agent, x, y):
+        
+        if self.world[x, y] == 1:
+            print("Agent already present at", x, y)
+            assert False
+
+        agent.set_position(x, y)
+        agent.mutate_dna(0.01)
+        self.position_agents[(x, y)] = agent
+        self.world[x, y] = 1
         self.agents.append(agent)
+        self.population += 1
 
     def remove_agent(self, agent):
+        
+        if agent.get_position() not in self.position_agents:
+            print("Agent not present at", agent.get_position())
+            assert False
+
+        self.population -= 1
+        self.world[agent.get_position()] = 0
         self.agents.remove(agent)
+        del self.position_agents[agent.get_position()]
 
     def step(self, agent_actions):
         # Note: length of agent_actions should be equal to number of agents in the world
         
-        self.step += 1
-
         # things that require resolution
         # 1. movement: a cell cannot have more than one agent, so we need to resolve this
         # 2. Kill: if agent 1 kills agent 2, agent 2 will not be able to act so we need to resolve this
             
         # we will create world copies to avoid changing the world while iterating
         new_world = self.world.copy()
+
+        if self.current_step % 10 == 0:
+            print("Step:", self.current_step, "Count agents", len(self.position_agents), 
+                "population", self.population, "killings", self.killings)
 
         # resolve killing:
         for k, agent in enumerate(self.agents):
@@ -246,39 +347,49 @@ class SimpleEvolutionEnv:
                 kill_position = (x + move_direction[0], y + move_direction[1])
 
                 # find agent at kill position
-                if kill_position in self.position_agents:
+                if kill_position in self.position_agents and kill_position != (x, y):
                     killed_agent = self.position_agents[kill_position]
-                    self.remove_agent(killed_agent)
-                    del self.position_agents[kill_position]
-        
+                    self.remove_agent(killed_agent)      
+                    self.killings += 1
+
         # resolve movement, set pheromone and other actions
         for k, agent in enumerate(self.agents):
             
-            responsivenes = agent.get_responsiveness()
-            x, y = agent.get_position()
-            move_direction = np.array(self.direction_index[agent.get_direction()])
+            responsivenes = agent.responsiveness
+            x, y = agent.x, agent.y
+            move_direction = self.direction_index[agent.get_direction()]
+            random_direction = self.direction_index[np.random.randint(1, 9)]
+            right_direction = np.array([move_direction[1], -move_direction[0]])
 
             if responsivenes >= 0.5:
                 # compute move direction 
                 move_fwd = agent_actions[k]["Mfd"] * move_direction
-                move_rnd = agent_actions[k]["Mrn"] * self.direction_index[np.random.randint(1, 9)]
+                move_rnd = agent_actions[k]["Mrn"] * random_direction
                 move_rv = agent_actions[k]["Mrv"] * -move_direction
-                right_move = np.array([move_direction[1], -move_direction[0]])
-                move_rl = agent_actions[k]["MRL"] * right_move
+                move_rl = agent_actions[k]["MRL"] * right_direction
                 move_x = agent_actions[k]["MX"] * self.direction_index[self.movement_names["east"]]
                 move_y = agent_actions[k]["MY"] * self.direction_index[self.movement_names["north"]]
 
-                # resolve movement
-                move = move_fwd + move_rnd + move_rv + move_rl + move_x + move_y
-                move_unit = np.round(move / np.linalg.norm(move)) # here x and y will be 0, 1 or -1
+                # # resolve movement
+                move = move_fwd + move_rnd + move_rv + move_rl + move_x + move_y 
+                norm = np.linalg.norm(move)
+
+                move_unit = np.round(move / (np.linalg.norm(move) + 10e-12)) # here x and y will be 0, 1 or -1
+
+                # check nan
+                if np.isnan(move_unit[0]):
+                    print("nan move", norm, move_fwd, move_rnd, move_rv, move_rl, move_x, move_y, move)
+                    assert False
 
                 # find new move direction
                 new_x = int(x + move_unit[0])
                 new_y = int(y + move_unit[1])
 
                 # check if new position is valid
-                world_val = self.get_cell_value(new_world, new_x, new_y, -1)
-                if world_val == 0:
+                world_val = self.get_cell_value(self.world, new_x, new_y, -1)
+                new_world_val = self.get_cell_value(new_world, new_x, new_y, -1)
+                block_val = self.get_cell_value(self.blockage, new_x, new_y, -1)
+                if world_val == 0 and new_world_val == 0 and block_val == 0:
                     # move agent
                     new_world[x, y] = 0
                     new_world[new_x, new_y] = 1
@@ -286,28 +397,38 @@ class SimpleEvolutionEnv:
                     self.position_agents[(new_x, new_y)] = agent
                     del self.position_agents[(x, y)]
 
-            # decay pheromone
-            self.pheromone = self.pheromone * self.pheromone_decay_rate
             # update pheromone
-            self.set_box_value(self.pheromone, x, y, agent_actions[k]["SG"] * responsivenes)
-
+            self.add_box_value(self.pheromone, x, y, agent_actions[k]["SG"] * responsivenes)
             # update agent age, oscillator, long probe distance and responsiveness
-            agent.set_age(agent.get_age() + 1)
-            agent.set_oscillator(agent.get_oscillator() + agent_actions[k]["OSC"])
-            agent.set_long_probe_distance(agent.get_long_probe_distance() + agent_actions[k]["LPD"])
-            agent.set_responsiveness(agent.get_responsiveness() + agent_actions[k]["Res"])
+            agent.set_age(agent.age + 1)
+            agent.set_oscillator(agent.oscillator + agent_actions[k]["OSC"])
+            agent.set_long_probe_distance(agent.long_probe_distance + agent_actions[k]["LPD"])
+            agent.set_responsiveness(agent.responsiveness + agent_actions[k]["Res"])
+
+
+        # decay pheromone
+        self.pheromone = self.pheromone * self.pheromone_decay_rate
 
         # update world
         self.world = new_world
+        self.population = len(self.agents)
+        self.current_step += 1
 
-        return self.get_state(), 0, self.step >= self.max_steps_per_generation, {}
+        return self.get_state(), 0, self.current_step >= self.max_steps_per_generation, {}
 
     def render(self):
-        # set figure size to be 10x10
-        plt.figure(figsize=(10, 10))
 
         # draw world, agents, danger_zone, blockage in single matrix and plot
-        world = self.world + self.danger + self.blockage
-        plt.imshow(world, cmap='viridis')
-        plt.show()
+        # world should be white, danger should be red, blockage should be gray, agents should be green
+
+        # draw world
+        world = np.zeros((self.world_size[0], self.world_size[1], 3)) + 255
+        world[self.danger == 1] = [128, 20, 20]
+        world[self.blockage == 1] = [80, 80, 80]
+        world[self.world == 1] = [0, 128, 0]
+
+        world = world.astype(np.uint8)
+
+        return world
+
 
