@@ -13,6 +13,11 @@ class Agent:
         self.hidden_neurons = hidden_neurons
         self.dna = dna
         self.initialize(hidden_neurons)
+        self.direction = 0 # can be 0, 1, 2, 3, 4, 5, 6, 7, 8 for 9 directions
+        # where 0 is stay, 1 is west, 2 is north-west, 3 is north, 4 is north-east, 5 is east, 6 is south-east, 7 is south, 8 is south-west
+
+        self.long_probe_distance = 1
+        self.responsiveness = 0.5
 
     def initialize(self, hidden_neurons):
         
@@ -104,12 +109,12 @@ class Agent:
 
             start_neuron_index = self.start_nerons[binary_string[0]]
             start_neron_number = int(binary_string[1:8], 2) % len(start_neuron_index)
-            sorted_keys = [k for k, v in sorted(self.start_neuron_index.items(), key=lambda item: item[1])]
+            sorted_keys = [k for k, v in sorted(start_neuron_index.items(), key=lambda item: item[1])]
             start_neuron = start_neuron_index[sorted_keys[start_neron_number]]
 
             end_neuron_index = self.end_neurons[binary_string[8]]
             end_neuron_number = int(binary_string[9:16], 2) % len(end_neuron_index)
-            sorted_keys = [k for k, v in sorted(self.end_neuron_index.items(), key=lambda item: item[1])]
+            sorted_keys = [k for k, v in sorted(end_neuron_index.items(), key=lambda item: item[1])]
             end_neuron = end_neuron_index[sorted_keys[end_neuron_number]]
 
             weight = int(binary_string[16:], 2) - 32768
@@ -135,6 +140,10 @@ class Agent:
             neuron_index = self.hidden_index[k]
             weight_sum = 0
 
+            if neuron_index not in self.weights:
+                self.neuron_state[neuron_index] = 0
+                continue
+
             # iterate over edge map
             for key, value in self.weights[neuron_index].items():
                 weight_sum += self.neuron_state[key] * value
@@ -150,6 +159,10 @@ class Agent:
             neuron_index = self.output_index[k]
             weight_sum = 0
 
+            if neuron_index not in self.weights:
+                output_action[k] = 0
+                continue
+
             # iterate over edge map
             for key, value in self.weights[neuron_index].items():
                 weight_sum += self.neuron_state[key] * value
@@ -160,3 +173,42 @@ class Agent:
 
         return output_action
     
+    def get_position(self):
+        x_location = self.neuron_state[self.input_index["Lx"]]
+        y_location = self.neuron_state[self.input_index["Ly"]]
+
+        return x_location, y_location
+    
+    def set_position(self, x, y):
+        self.neuron_state[self.input_index["Lx"]] = x
+        self.neuron_state[self.input_index["Ly"]] = y
+
+    def get_oscillator(self):
+        return self.neuron_state[self.input_index["Osc"]]
+    
+    def set_oscillator(self, osciallator):
+        self.neuron_state[self.input_index["Osc"]] = osciallator
+
+    def get_age(self):
+        return self.neuron_state[self.input_index["Age"]]
+    
+    def set_age(self, age):
+        self.neuron_state[self.input_index["Age"]] = age
+
+    def get_direction(self):
+        return self.direction
+    
+    def set_direction(self, direction):
+        self.direction = direction
+
+    def get_long_probe_distance(self):
+        return self.long_probe_distance
+    
+    def set_long_probe_distance(self, long_probe_distance):
+        self.long_probe_distance = long_probe_distance
+
+    def get_responsiveness(self):
+        return self.responsiveness
+    
+    def set_responsiveness(self, responsiveness):
+        self.responsiveness = responsiveness
