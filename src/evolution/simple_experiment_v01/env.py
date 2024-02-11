@@ -28,6 +28,8 @@ class SimpleEvolutionEnv:
         self.population = 0
         self.gene_length = gene_length
 
+        self.dna_bank = [[str(format(np.random.randint(0, 16**8, dtype=np.int64) , '08x')) for _ in range(self.gene_length)] for _ in range(self.max_population)]
+
         # 9 movement directions
         self.movement_names = {
             "stay": 0, "west": 1, "north-west": 2, "north": 3, "north-east": 4, "east": 5, "south-east": 6, "south": 7, "south-west": 8
@@ -60,6 +62,7 @@ class SimpleEvolutionEnv:
         self.current_step = 0
         self.killings = 0
         self.world = np.zeros(self.world_size)
+        self.new_world = np.zeros(self.world_size)
         self.pheromone = np.zeros(self.world_size)
         self.danger = np.zeros(self.world_size)
         self.blockage = np.zeros(self.world_size)
@@ -72,16 +75,15 @@ class SimpleEvolutionEnv:
             self.blockage[10:70, 30:35] = 1
             self.blockage[-70:-10, -35:-30] = 1
 
-        dna_bank = []
         if keep_old_agents:
             dna_bank = [agent.get_dna() for agent in self.agents]
         else:
-            dna_bank = [[str(format(np.random.randint(0, 16**8, dtype=np.int64) , '08x')) for _ in range(self.gene_length)] for _ in range(self.max_population)]
+            dna_bank = self.dna_bank
 
         # random placement of agents where there is no blockage
         self.agents = [] 
-        pop_counter = 0
         self.population = 0
+        pop_counter = 0
         self.position_agents = {} 
         while pop_counter < self.max_population:
             x = np.random.randint(self.world_size[0])
@@ -111,8 +113,6 @@ class SimpleEvolutionEnv:
 
     def get_state(self):
 
-        # return self.get_state_multi()
-        
         # pheromone density sum of surrounding 8 cells, requires convolution
         padded_size = (self.world_size[0] + 2, self.world_size[1] + 2)
         pheromone_density = np.zeros(padded_size)
@@ -129,6 +129,8 @@ class SimpleEvolutionEnv:
         self.pheromone_density = pheromone_density[1:-1, 1:-1]
         self.population_density = population_density[1:-1, 1:-1]
         self.blockage_density = blockage_density[1:-1, 1:-1]
+
+        # return self.get_state_multi()
 
         agent_states = []
         for agent in self.agents:
@@ -173,7 +175,7 @@ class SimpleEvolutionEnv:
 
         return property[x_start:x_end, y_start:y_end]
 
-    def add_box_value(self, property, x, y, value, box_size = [1,1,1,1]):
+    def add_pheromone_value(self, x, y, value, box_size = [1,1,1,1]):
         # set sum of box_size x box_size cells around x, y
 
         x_start = x - box_size[0] if x - box_size[0] >= 0 else 0
@@ -181,7 +183,9 @@ class SimpleEvolutionEnv:
         y_start = y - box_size[2] if y - box_size[2] >= 0 else 0
         y_end = y + box_size[3] if y + box_size[3] < self.world_size[1] else self.world_size[1]
 
-        property[x_start:x_end, y_start:y_end] += value
+        for i in range(x_start, x_end):
+            for j in range(y_start, y_end):
+                self.pheromone[i, j] += value
 
     def get_probe_value(self, property, x, y, direction, probe_distance = 5):
 
@@ -319,6 +323,7 @@ class SimpleEvolutionEnv:
         self.world[agent.get_position()] = 0
         self.agents.remove(agent)
         del self.position_agents[agent.get_position()]
+        del agent
 
     def step(self, agent_actions):
         # Note: length of agent_actions should be equal to number of agents in the world
@@ -328,29 +333,29 @@ class SimpleEvolutionEnv:
         # 2. Kill: if agent 1 kills agent 2, agent 2 will not be able to act so we need to resolve this
             
         # we will create world copies to avoid changing the world while iterating
-        new_world = self.world.copy()
+        self.new_world = self.world.copy()
 
         if self.current_step % 10 == 0:
             print("Step:", self.current_step, "Count agents", len(self.position_agents), 
                 "population", self.population, "killings", self.killings)
 
-        # resolve killing:
-        for k, agent in enumerate(self.agents):
+        # # resolve killing:
+        # for k, agent in enumerate(self.agents):
 
-            if agent.get_responsiveness() < 0.5:
-                continue
+        #     if agent.get_responsiveness() < 0.5:
+        #         continue
 
-            if agent_actions[k]["Kill"] > 0:
-                # get kill position
-                x, y = agent.get_position()
-                move_direction = self.direction_index[agent.get_direction()]
-                kill_position = (x + move_direction[0], y + move_direction[1])
+        #     if agent_actions[k]["Kill"] > 0:
+        #         # get kill position
+        #         x, y = agent.get_position()
+        #         move_direction = self.direction_index[agent.get_direction()]
+        #         kill_position = (x + move_direction[0], y + move_direction[1])
 
-                # find agent at kill position
-                if kill_position in self.position_agents and kill_position != (x, y):
-                    killed_agent = self.position_agents[kill_position]
-                    self.remove_agent(killed_agent)      
-                    self.killings += 1
+        #         # find agent at kill position
+        #         if kill_position in self.position_agents and kill_position != (x, y):
+        #             killed_agent = self.position_agents[kill_position]
+        #             self.remove_agent(killed_agent)      
+        #             self.killings += 1
 
         # resolve movement, set pheromone and other actions
         for k, agent in enumerate(self.agents):
@@ -384,21 +389,39 @@ class SimpleEvolutionEnv:
                 # find new move direction
                 new_x = int(x + move_unit[0])
                 new_y = int(y + move_unit[1])
+                new_x = (new_x if new_x >= 0 else 0) if new_x < self.world_size[0] else self.world_size[0] - 1
+                new_y = (new_y if new_y >= 0 else 0) if new_y < self.world_size[1] else self.world_size[1] - 1
 
-                # check if new position is valid
-                world_val = self.get_cell_value(self.world, new_x, new_y, -1)
-                new_world_val = self.get_cell_value(new_world, new_x, new_y, -1)
-                block_val = self.get_cell_value(self.blockage, new_x, new_y, -1)
-                if world_val == 0 and new_world_val == 0 and block_val == 0:
-                    # move agent
-                    new_world[x, y] = 0
-                    new_world[new_x, new_y] = 1
-                    agent.set_position(new_x, new_y)
-                    self.position_agents[(new_x, new_y)] = agent
-                    del self.position_agents[(x, y)]
+                if new_x == x and new_y == y:
+                    # stay in same position
+                    self.new_world[x, y] = 1
+                else:
+                    # check if new position is valid
+                    world_val = self.world[new_x, new_y]
+                    new_world_val = self.new_world[new_x, new_y]
+                    block_val = self.blockage[new_x, new_y]
+                    if world_val == 0 and new_world_val == 0 and block_val == 0:
+                        # move agent
+                        agent.set_position(new_x, new_y)
+
+                        if (new_x, new_y) in self.position_agents:
+                            index_of_conflict = self.agents.index(self.position_agents[(new_x, new_y)])
+                            print("Current steps", self.current_step)
+                            print("Conflict at", new_x, new_y, "Current agent", k, "Other agent", index_of_conflict)
+                            print("Agent at", x, y, "moved to", new_x, new_y)
+                            print("World", self.world[x, y], "New World", self.new_world[x, y])
+                            print("World", self.world[new_x, new_y], "New World", self.new_world[new_x, new_y])
+                            assert False
+
+                        self.position_agents[(new_x, new_y)] = agent
+                        del self.position_agents[(x, y)]
+                        self.new_world[x, y] = 0
+                        self.new_world[new_x, new_y] = 1
+                        
 
             # update pheromone
-            self.add_box_value(self.pheromone, x, y, agent_actions[k]["SG"] * responsivenes)
+            # self.add_pheromone_value(x, y, agent_actions[k]["SG"] * responsivenes)
+            self.pheromone[x, y] += agent_actions[k]["SG"] * responsivenes
             # update agent age, oscillator, long probe distance and responsiveness
             agent.set_age(agent.age + 1)
             agent.set_oscillator(agent.oscillator + agent_actions[k]["OSC"])
@@ -410,7 +433,7 @@ class SimpleEvolutionEnv:
         self.pheromone = self.pheromone * self.pheromone_decay_rate
 
         # update world
-        self.world = new_world
+        self.world = self.new_world.copy()
         self.population = len(self.agents)
         self.current_step += 1
 

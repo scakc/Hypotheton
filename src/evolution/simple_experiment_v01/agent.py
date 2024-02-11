@@ -222,14 +222,11 @@ class Agent:
     def set_position(self, x, y):
         self.x = x
         self.y = y
-        self.neuron_state[self.input_index["Lx"]] = x
-        self.neuron_state[self.input_index["Ly"]] = y
 
     def get_oscillator(self):
         return self.oscillator
     
     def set_oscillator(self, osciallator):
-        self.neuron_state[self.input_index["Osc"]] = osciallator
         self.oscillator = osciallator
 
     def get_age(self):
@@ -237,7 +234,6 @@ class Agent:
     
     def set_age(self, age):
         self.age = age
-        self.neuron_state[self.input_index["Age"]] = age
 
     def get_direction(self):
         return self.direction
