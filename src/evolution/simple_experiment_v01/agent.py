@@ -152,6 +152,11 @@ class Agent:
         # input is a dictionary with keys as sensory neuron names and values as neuron values
         # update the neuron state of sensory neurons
         for key, value in input.items():
+            
+            if key == 'Osc':
+                self.neuron_state[self.input_index[key]] = np.sin(value)
+                continue
+
             self.neuron_state[self.input_index[key]] = value
 
         # hidden nodes are calculated first
