@@ -56,7 +56,7 @@ class SimpleEvolutionEnv:
         self.output_keys = ["LPD", "Kill", "OSC", "SG", "Res", "Mfd", "Mrn", "Mrv", "MRL", "MX", "MY"]
 
         self.pheromone_decay_rate = 0.9
-        self.random_states = [{key: np.random.rand() for key in self.input_keys} for _ in range(self.max_population)]
+        # self.random_states = [{key: np.random.rand() for key in self.input_keys} for _ in range(self.max_population)]
         self.reset()
     
     def reset(self, keep_old_agents = False):
@@ -201,7 +201,7 @@ class SimpleEvolutionEnv:
 
     def get_state(self):
 
-        return self.get_batch_state()
+        # return self.get_batch_state()
 
         # pheromone density sum of surrounding 8 cells, requires convolution
         padded_size = (self.world_size[0] + 2, self.world_size[1] + 2)

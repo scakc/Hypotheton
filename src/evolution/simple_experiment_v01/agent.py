@@ -30,7 +30,7 @@ class Agent:
         # where 0 is stay, 1 is west, 2 is north-west, 3 is north, 4 is north-east, 5 is east, 6 is south-east, 7 is south, 8 is south-west
 
         self.initialize(hidden_neurons)
-        self.random_output =  {key: np.random.rand() for key in self.output_index.keys()}
+        # self.random_output =  {key: np.random.rand() for key in self.output_index.keys()}
         self.index = -1
         
     def __getstate__(self):

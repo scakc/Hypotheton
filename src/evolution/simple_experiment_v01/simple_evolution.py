@@ -1,20 +1,10 @@
 import numpy as np
-import matplotlib.pyplot as plt 
-import importlib
-import concurrent.futures
-
 import time
-
-# import animation module here
-import matplotlib.animation as animation
-# from IPython.display import HTML, clear_output as clr
 import pickle
-
 import env as Environments
-import agent as Agents
-import sys
-# importlib.reload(Environments)
-# importlib.reload(Agents)
+
+# argument parser
+import argparse
 
 def save_generations(env, image_list, suffix = ''):
     agents = [agent.dna for agent in env.agents]
@@ -33,10 +23,24 @@ def load_generations(suffix = ''):
 
 if __name__ == '__main__':
 
-    # get arguments
+    # get arguments using argparse
+    parser = argparse.ArgumentParser(description='Simple Evolution Experiment')
+    parser.add_argument('--load', action='store_true', help='Load previous generations')
+    parser.add_argument('--generation', type=int, default=50, help='Number of generations')
+    parser.add_argument('--population', type=int, default=100, help='Population size')
+    parser.add_argument('--gene_length', type=int, default=16, help='Gene length')
+    parser.add_argument('--hidden_neurons', type=int, default=4, help='Number of hidden neurons')
+    parser.add_argument('--max_steps', type=int, default=200, help='Max steps per generation')
+
+    args = parser.parse_args()
 
     # sample run evolution environment
-    env = Environments.SimpleEvolutionEnv(max_steps_per_generation=200, population=1000, number_hidden_neurons = 4, gene_length = 16)
+    env = Environments.SimpleEvolutionEnv(max_steps_per_generation=args.max_steps, population=args.population, 
+                                          number_hidden_neurons = args.hidden_neurons, gene_length = args.gene_length)
+    
+    if args.load:
+        agents, generations, _ = load_generations()
+        env.load_agents(agents, generations)
     
     # Initiate the evolution
     image_list = []
@@ -45,11 +49,11 @@ if __name__ == '__main__':
     t0 = time.time()
     output_keys = env.agents[0].output_index.keys()
 
-    for gen in range(2):
+    for gen in range(args.max_steps):
         print_txt = ""
         print_txt += f"generation {gen}, "
-        print_txt += "average time per step: states {}, actions {}, ".format(np.mean(state_time_lapses[-5:]), np.mean(action_time_lapses[-5:]))
-        print_txt += f"survival_rate {env.survival_rate}, "
+        print_txt += "average time per step: states {:.4f}, actions {:.4f}, ".format(np.round(np.mean(state_time_lapses[-5:]),4), np.round(np.mean(action_time_lapses[-5:]),4))
+        print_txt += f"survival_rate {np.round(env.survival_rate,2):.2f}, "
         # print_txt += '\r'
         
         print(print_txt)
@@ -60,7 +64,7 @@ if __name__ == '__main__':
         
         # lets time each step
         done = False
-        max_step = 201
+        max_step = args.max_steps+1
         steps = 0
         states = env.reset(keep_old_agents = True)
         while not done and steps < max_step:
