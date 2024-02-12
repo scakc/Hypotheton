@@ -30,6 +30,8 @@ class Agent:
         # where 0 is stay, 1 is west, 2 is north-west, 3 is north, 4 is north-east, 5 is east, 6 is south-east, 7 is south, 8 is south-west
 
         self.initialize(hidden_neurons)
+        self.random_output =  {key: np.random.rand() for key in self.output_index.keys()}
+        self.index = -1
         
     def __getstate__(self):
         # Return a dictionary representing the object's state
@@ -128,9 +130,9 @@ class Agent:
             binary_string = bin(int(batch, 16))[2:].zfill(32)
 
             start_neuron_index = self.start_nerons[binary_string[0]]
-            start_neron_number = int(binary_string[1:8], 2) % len(start_neuron_index)
+            start_neuron_number = int(binary_string[1:8], 2) % len(start_neuron_index)
             sorted_keys = [k for k, v in sorted(start_neuron_index.items(), key=lambda item: item[1])]
-            start_neuron = start_neuron_index[sorted_keys[start_neron_number]]
+            start_neuron = start_neuron_index[sorted_keys[start_neuron_number]]
 
             end_neuron_index = self.end_neurons[binary_string[8]]
             end_neuron_number = int(binary_string[9:16], 2) % len(end_neuron_index)
@@ -148,6 +150,9 @@ class Agent:
         return weights
         
     def get_outputs(self, input):
+
+        # return random
+        # return self.random_output
 
         # input is a dictionary with keys as sensory neuron names and values as neuron values
         # update the neuron state of sensory neurons
@@ -198,7 +203,7 @@ class Agent:
 
         return output_action
     
-    def mutate_dna(self, mutation_rate = 0.01):
+    def mutate_dna(self, mutation_rate = 0.1):
         # pass
         # mutate dna with a mutation rate
         new_dna = [str(dna_strain) for dna_strain in self.dna]
@@ -257,3 +262,9 @@ class Agent:
     
     def set_responsiveness(self, responsiveness):
         self.responsiveness = responsiveness
+
+    def compute_state(self):
+        input_keys = ["Slr", "Sfd", "Sg", "Age", "Rnd", "Blr", "Osc", "Bfd", "Plr", "Pop", "Pfd", "LPf", "LMy", "LBf", "LMx", "BDy", "Gen", "BDx", "Lx", "BD", "Ly"]
+        sample_input = {key: np.random.rand() for key in input_keys}
+        return sample_input
+    
