@@ -55,15 +55,14 @@ class SimpleEvolutionEnv:
         self.input_keys = ["Slr", "Sfd", "Sg", "Age", "Rnd", "Blr", "Osc", "Bfd", "Plr", "Pop", "Pfd", "LPf", "LMy", "LBf", "LMx", "BDy", "Gen", "BDx", "Lx", "BD", "Ly"]
         self.output_keys = ["LPD", "Kill", "OSC", "SG", "Res", "Mfd", "Mrn", "Mrv", "MRL", "MX", "MY"]
 
-        self.pheromone_decay_rate = 0.9
+        self.pheromone_decay_rate = 0.8
         # self.random_states = [{key: np.random.rand() for key in self.input_keys} for _ in range(self.max_population)]
         self.reset()
     
-    def reset(self, keep_old_agents = False):
+    def reset(self, keep_old_agents = True):
 
         if keep_old_agents:
             self.generation_count += 1
-            self.destroy_unsafe_agents()
         
         self.current_step = 0
         self.killings = 0
@@ -85,9 +84,10 @@ class SimpleEvolutionEnv:
             # self.danger[50:-50, 55:-55] = 0
 
         if keep_old_agents:
-            dna_bank = [agent.get_dna() for agent in self.agents]
-        else:
+            # print("Keeping old agents")
             dna_bank = self.dna_bank
+        else:
+            dna_bank = [[str(format(np.random.randint(0, 16**8, dtype=np.int64) , '08x')) for _ in range(self.gene_length)] for _ in range(self.max_population)]
 
         # random placement of agents where there is no blockage
         self.agents = [] 
@@ -104,14 +104,7 @@ class SimpleEvolutionEnv:
                 # print("Adding agent with dna", dna_agent)
                 self.add_agent(Agent(self.number_hidden_neurons, dna_agent), x, y)
                 pop_counter += 1
-
-            # def get_gradient(self, property):
-            #     # get gradient of property
-            #     gradient = np.gradient(property)
-            #     return np.sqrt(gradient[0]**2 + gradient[1]**2)
-        # print("Count agents", len(self.position_agents), "population", self.population, "killings", self.killings)
-        # assert False
-        
+                
         return self.get_state()
 
     def destroy_unsafe_agents(self):
@@ -122,82 +115,8 @@ class SimpleEvolutionEnv:
 
         self.survival_rate = self.population / self.max_population
 
-    def get_batch_state(self):
-        
-        # pheromone density sum of surrounding 8 cells, requires convolution
-        padded_size = (self.world_size[0] + 2, self.world_size[1] + 2)
-        pheromone_density = np.zeros(padded_size)
-        population_density = np.zeros(padded_size)
-        blockage_density = np.zeros(padded_size)
-        padded_pheromone = np.pad(self.pheromone, ((1, 1), (1, 1)), 'constant', constant_values=(0, 0))
-        padded_population = np.pad(self.world, ((1, 1), (1, 1)), 'constant', constant_values=(0, 0))
-        padded_blockage = np.pad(self.blockage, ((1, 1), (1, 1)), 'constant', constant_values=(0, 0))
-        for i in range(8):
-            pheromone_density += np.roll(padded_pheromone, self.direction_index[i], axis=(0, 1))
-            population_density += np.roll(padded_population, self.direction_index[i], axis=(0, 1))
-            blockage_density += np.roll(padded_blockage, self.direction_index[i], axis=(0, 1))
-
-        self.pheromone_density = pheromone_density[1:-1, 1:-1]
-        self.population_density = population_density[1:-1, 1:-1]
-        self.blockage_density = blockage_density[1:-1, 1:-1]
-
-        # agent_directions = []
-        # agent_long_probes = []
-        # x_positions = []
-        # y_positions = []
-        # output_frame = pd.DataFrame([], columns = self.input_keys)
-        # none_row = [None for _ in range(len(self.input_keys))]
-
-        # for k, agent in enumerate(self.agents):
-
-        #     # add row with nones
-        #     output_frame.loc[k] = none_row
-        #     output_frame.loc[k, "Age"] = agent.age
-        #     output_frame.loc[k, "Osc"] = agent.oscillator
-        #     output_frame.loc[k, "LPf"] = agent.long_probe_distance
-        #     output_frame.loc[k, "Gen"] = 0
-        #     output_frame.loc[k, "BD"] = 0
-        #     output_frame.loc[k, "Lx"] = agent.x
-        #     output_frame.loc[k, "Ly"] = agent.y
-        #     output_frame.loc[k, "BDx"] = min(agent.x, self.world_size[0] - agent.x)
-        #     output_frame.loc[k, "BDy"] = min(agent.y, self.world_size[1] - agent.y)
-        #     output_frame.loc[k, "Rnd"] = np.random.rand()
-        #     output_frame.loc[k, "Slr"] = 0
-        #     output_frame.loc[k, "Sfd"] = 0
-        #     output_frame.loc[k, "Sg"] = 0
-        #     output_frame.loc[k, "Blr"] = 0
-        #     output_frame.loc[k, "Bfd"] = 0
-        #     output_frame.loc[k, "Plr"] = 0
-        #     output_frame.loc[k, "Pop"] = 0
-        #     output_frame.loc[k, "Pfd"] = 0
-        #     output_frame.loc[k, "LMy"] = 0
-        #     output_frame.loc[k, "LBf"] = 0
-        #     output_frame.loc[k, "LMx"] = 0
-
-        #     agent_directions.append(self.direction_index[agent.direction])
-        #     agent_long_probes.append(agent.long_probe_distance)
-        #     x_positions.append(agent.x)
-        #     y_positions.append(agent.y)
-
-        # direction_array = np.array(agent_directions)
-        # agent_long_probes_array = np.array(agent_long_probes)
-        # x_array = np.array(x_positions)
-        # y_array = np.array(y_positions)
-
-        # x_forward = np.clip(x_array + direction_array[:, 0], 0, self.world_size[0])
-        # y_forward = np.clip(y_array + direction_array[:, 1], 0, self.world_size[1])
-        # x_forwardl = np.clip(x_array + direction_array[:, 0]*agent_long_probes_array, 0, self.world_size[0])
-        # y_forwardl = np.clip(y_array + direction_array[:, 1]*agent_long_probes_array, 0, self.world_size[1])
-        # x_left = np.clip(x_array - direction_array[:, 1], 0, self.world_size[1])
-        # y_left = np.clip(y_array + direction_array[:, 0], 0, self.world_size[0])
-        # x_right = np.clip(x_array + direction_array[:, 1], 0, self.world_size[1])
-        # y_right = np.clip(y_array - direction_array[:, 0], 0, self.world_size[0])
-
-        # Slr = self.pheromone[x_left, y_left] - self.pheromone[x_right, y_right]
-        # Sfd = self.pheromone[x_array, y_array] - self.pheromone[x_forward, y_forward]
-        # Sg = self.pheromone_density[x_array, y_array]
-
-        return self.random_states
+        # save dnas
+        self.dna_bank = [agent.get_dna() for agent in self.agents]
 
     def get_state(self):
 
@@ -412,20 +331,14 @@ class SimpleEvolutionEnv:
         # 2. Kill: if agent 1 kills agent 2, agent 2 will not be able to act so we need to resolve this
             
         # we will create world copies to avoid changing the world while iterating
-        self.new_world = self.world.copy()
-
-        # if self.current_step % 10 == 0:
-        #     print("Step:", self.current_step, "Count agents", len(self.position_agents), 
-        #         "population", self.population, "killings", self.killings)
+        new_world = self.world.copy()
 
         # resolve killing:
-        # print("Agent actions", agent_actions[0].keys())
-        # assert False
         for k, agent in enumerate(self.agents):
 
             if agent.get_responsiveness() < 0.5:
                 continue
-
+            
             if agent_actions[k]["Kill"] > 0:
                 # get kill position
                 x, y = agent.get_position()
@@ -474,30 +387,20 @@ class SimpleEvolutionEnv:
                 else:
                     # check if new position is valid
                     world_val = self.world[new_x, new_y]
-                    new_world_val = self.new_world[new_x, new_y]
+                    new_world_val = new_world[new_x, new_y]
                     block_val = self.blockage[new_x, new_y]
                     if world_val == 0 and new_world_val == 0 and block_val == 0:
                         # move agent
                         agent.set_position(new_x, new_y)
-
-                        # if (new_x, new_y) in self.position_agents:
-                        #     index_of_conflict = self.agents.index(self.position_agents[(new_x, new_y)])
-                        #     print("Current steps", self.current_step)
-                        #     print("Conflict at", new_x, new_y, "Current agent", k, "Other agent", index_of_conflict)
-                        #     print("Agent at", x, y, "moved to", new_x, new_y)
-                        #     print("World", self.world[x, y], "New World", self.new_world[x, y])
-                        #     print("World", self.world[new_x, new_y], "New World", self.new_world[new_x, new_y])
-                        #     assert False
-
                         self.position_agents[(new_x, new_y)] = agent
                         del self.position_agents[(x, y)]
-                        self.new_world[x, y] = 0
-                        self.new_world[new_x, new_y] = 1
+                        new_world[x, y] = 0
+                        new_world[new_x, new_y] = 1
                         
 
             # update pheromone
-            # self.add_pheromone_value(x, y, agent_actions[k]["SG"] * responsivenes)
             self.pheromone[x, y] += agent_actions[k]["SG"] * responsivenes
+            
             # update agent age, oscillator, long probe distance and responsiveness
             agent.set_age(agent.age + 1)
             agent.set_oscillator(agent.oscillator + agent_actions[k]["OSC"])
@@ -509,11 +412,16 @@ class SimpleEvolutionEnv:
         self.pheromone = self.pheromone * self.pheromone_decay_rate
 
         # # update world
-        self.world = self.new_world.copy()
+        self.world = new_world
         self.population = len(self.agents)
         self.current_step += 1
 
-        return self.get_state(), 0, self.current_step >= self.max_steps_per_generation, {}
+        done = self.current_step >= self.max_steps_per_generation
+
+        if done:
+            self.destroy_unsafe_agents()
+
+        return self.get_state(), 0, done, {}
 
     def render(self):
 
@@ -529,3 +437,7 @@ class SimpleEvolutionEnv:
         world = world.astype(np.uint8)
 
         return world
+
+    def load_agents(self, dnas, generations):
+        self.dna_bank = dnas
+        self.generation_count = generations

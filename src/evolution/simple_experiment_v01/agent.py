@@ -139,8 +139,8 @@ class Agent:
             sorted_keys = [k for k, v in sorted(end_neuron_index.items(), key=lambda item: item[1])]
             end_neuron = end_neuron_index[sorted_keys[end_neuron_number]]
 
-            weight = int(binary_string[16:], 2) - 32768
-            weight = weight / 32768
+            weight = float(int(binary_string[16:], 2)) - 32768
+            weight = weight / 10000.0
 
             if end_neuron not in weights:
                 weights[end_neuron] = {}
@@ -171,7 +171,7 @@ class Agent:
             weight_sum = 0
 
             if neuron_index not in self.weights:
-                self.neuron_state[neuron_index] = 0
+                # self.neuron_state[neuron_index] = 0
                 continue
 
             # iterate over edge map
@@ -203,7 +203,7 @@ class Agent:
 
         return output_action
     
-    def mutate_dna(self, mutation_rate = 0.1):
+    def mutate_dna(self, mutation_rate = 0.001):
         # pass
         # mutate dna with a mutation rate
         new_dna = [str(dna_strain) for dna_strain in self.dna]
