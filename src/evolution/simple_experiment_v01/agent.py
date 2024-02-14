@@ -12,6 +12,7 @@ class Agent:
 
         self.hidden_neurons = hidden_neurons
         self.dna = dna
+        self.binary_dna = self.get_single_binary_dna()
         self.input_index = {}
         self.output_index = {}
         self.hidden_index = {}
@@ -40,6 +41,18 @@ class Agent:
     def __setstate__(self, state):
         # Restore the object's state from the given dictionary
         self.__dict__.update(state)
+
+    def get_single_binary_dna(self):
+
+        binary_dna = np.zeros(32 * len(self.dna))
+        for k, batch in enumerate(self.dna):
+            dna_bin = bin(int(batch, 16))[2:].zfill(32)
+            start_index = k * 32
+            end_index = (k + 1) * 32
+            binary_dna[start_index:end_index] = np.array(list(dna_bin)).astype(int)
+            
+        return binary_dna
+        
 
     def initialize(self, hidden_neurons):
         

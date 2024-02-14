@@ -43,10 +43,13 @@ if __name__ == '__main__':
     
     if args.load_suffix != '~':
         print(f"Loading from {args.load_suffix}")
-        load_suffix = args.load_suffix
-        dnas, generations, _ = load_generations(load_suffix)
-        env.load_agents(dnas, generations)
-        print(f"Loaded {len(dnas)} agents")
+        try:
+            load_suffix = args.load_suffix
+            dnas, generations, _ = load_generations(load_suffix)
+            env.load_agents(dnas, generations)
+            print(f"Loaded {len(dnas)} agents")
+        except:
+            print(f"Failed to load from {args.load_suffix}, file may not exist new save will be the suffix.")
     else:
         load_suffix = ''
     

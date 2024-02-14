@@ -104,7 +104,9 @@ class SimpleEvolutionEnv:
                 # print("Adding agent with dna", dna_agent)
                 self.add_agent(Agent(self.number_hidden_neurons, dna_agent), x, y)
                 pop_counter += 1
-                
+            
+        self.dna_colors = self.get_colored_dnas()
+
         return self.get_state()
 
     def destroy_unsafe_agents(self):
@@ -423,7 +425,7 @@ class SimpleEvolutionEnv:
 
         return self.get_state(), 0, done, {}
 
-    def render(self):
+    def render(self, color_dnas = True):
 
         # draw world, agents, danger_zone, blockage in single matrix and plot
         # world should be white, danger should be red, blockage should be gray, agents should be green
@@ -434,9 +436,44 @@ class SimpleEvolutionEnv:
         world[self.blockage == 1] = [80, 80, 80]
         world[self.world == 1] = [0, 128, 0]
 
+        if color_dnas:
+            dna_colors = self.dna_colors
+            for agent in self.agents:
+                x, y = agent.get_position()
+                world[x, y] = dna_colors[agent.index]
+
         world = world.astype(np.uint8)
 
         return world
+    
+    def get_colored_dnas(self):
+        # similar dnas should have same color and different dnas should have different colors
+        # colors should be a shade of green color
+        
+        agent_dnas = np.array([agent.binary_dna for agent in self.agents]) # matrix of N x (gene_length x 32)
+        
+        # similarity 
+        similar_dnas = []
+        sim_matrix = agent_dnas @ agent_dnas.T / agent_dnas.shape[1]
+
+        # print max and min
+        # print(sim_matrix.max(), sim_matrix.min())
+
+        for i in range(sim_matrix.shape[0]):
+            i_similar = np.where(sim_matrix[i][i+1:] > 0.45)[0]
+            i_set = [i] + i_similar
+            similar_dnas.append(i_set)
+
+        # print(len(similar_dnas))
+
+        # dna colors will be a green shade
+        dna_colors = np.zeros((len(self.agents), 3))
+        for i in range(len(similar_dnas)):
+            color = np.random.randint(0, 256, 3)
+            for j in similar_dnas[i]:
+                dna_colors[j] = color
+
+        return dna_colors
 
     def load_agents(self, dnas, generations):
         self.dna_bank = dnas
