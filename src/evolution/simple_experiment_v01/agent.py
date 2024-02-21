@@ -27,6 +27,7 @@ class Agent:
         self.oscillator = 0
         self.x = None
         self.y = None
+        self.fitness = 0.5
         self.direction = 0 # can be 0, 1, 2, 3, 4, 5, 6, 7, 8 for 9 directions
         # where 0 is stay, 1 is west, 2 is north-west, 3 is north, 4 is north-east, 5 is east, 6 is south-east, 7 is south, 8 is south-west
 
@@ -130,7 +131,7 @@ class Agent:
         # each batch is converted to a 32 bit binary string which represents connection between all these neurons
         # the first 8 bits represent the connection start neuron 
         # the next 8 bits represent the connection end neuron
-        # the next 16 bits represent the connection weight (0-65535), subtract 32768 to get -32768 to 32767 and divide by 32768 to get -1 to 1 range
+        # the next 16 bits are weights and biases
         # in each start neuron representation the first bit represents the connection from input (0) / hidden (1) neuron
         # in each end neuron representation the first bit represents the connection to output (0) / hidden (1) neuron
         # the modulo of remaining 7 bits is used to represent the neuron index based on index length
@@ -152,13 +153,17 @@ class Agent:
             sorted_keys = [k for k, v in sorted(end_neuron_index.items(), key=lambda item: item[1])]
             end_neuron = end_neuron_index[sorted_keys[end_neuron_number]]
 
-            weight = float(int(binary_string[16:], 2)) - 32768
-            weight = weight / 10000.0
+            weight = float(int(binary_string[16:28], 2)) - 2**11
+            weight = weight / 1000.0
+
+            bias = float(int(binary_string[28:], 2)) - 2**3
+            bias = bias / 10.0
 
             if end_neuron not in weights:
                 weights[end_neuron] = {}
-            
+                
             weights[end_neuron][start_neuron] = weight
+            weights[end_neuron]["bias"] = bias
 
         return weights
         
@@ -189,7 +194,14 @@ class Agent:
 
             # iterate over edge map
             for key, value in self.weights[neuron_index].items():
+
+                if key == "bias":
+                    weight_sum += value
+                    continue
+
                 weight_sum += self.neuron_state[key] * value
+
+            # weight_sum += self.biases[neuron_index]
 
             # apply tanh activation function
             self.neuron_state[neuron_index] = np.tanh(weight_sum)
@@ -208,7 +220,14 @@ class Agent:
 
             # iterate over edge map
             for key, value in self.weights[neuron_index].items():
+
+                if key == "bias":
+                    weight_sum += value
+                    continue
+
                 weight_sum += self.neuron_state[key] * value
+
+            # weight_sum += self.biases[neuron_index]
 
             # apply tanh activation function
             output_action[k] = np.tanh(weight_sum)
@@ -274,7 +293,10 @@ class Agent:
         return self.responsiveness
     
     def set_responsiveness(self, responsiveness):
-        self.responsiveness = responsiveness
+        self.responsiveness = max(min(responsiveness, 0.99), 0.01)
+        
+        alpha = 0.9
+        self.fitness = self.fitness * alpha + self.responsiveness * (1 - alpha)
 
     def compute_state(self):
         input_keys = ["Slr", "Sfd", "Sg", "Age", "Rnd", "Blr", "Osc", "Bfd", "Plr", "Pop", "Pfd", "LPf", "LMy", "LBf", "LMx", "BDy", "Gen", "BDx", "Lx", "BD", "Ly"]

@@ -5,7 +5,6 @@ from agent import Agent
 import multiprocessing
 import pandas as pd
 import time
-import concurrent.futures
 
 # An env class for evolution experiment 
 # contains a world of 128 x 128 cells
@@ -20,7 +19,9 @@ import concurrent.futures
 
 class SimpleEvolutionEnv:
 
-    def __init__(self, board_size = [128, 128], max_steps_per_generation = 300, population = 1000, number_hidden_neurons = 1, env_type = "simple", gene_length = 4):
+    def __init__(self, board_size = [128, 128], max_steps_per_generation = 300, population = 1000, 
+                 number_hidden_neurons = 1, env_type = "simple", gene_length = 4,
+                 mutation_rate = 0.001, reproduction = "asexual"):
 
         self.world_size = board_size
         self.max_steps_per_generation = max_steps_per_generation
@@ -31,9 +32,11 @@ class SimpleEvolutionEnv:
         self.population = 0
         self.gene_length = gene_length
         self.survival_rate = 0
+        self.mutation_rate = mutation_rate
+        self.reproduction = reproduction
         self.agent_indexes = np.array([-1]*self.max_population)
 
-        self.dna_bank = [[str(format(np.random.randint(0, 16**8, dtype=np.int64) , '08x')) for _ in range(self.gene_length)] for _ in range(self.max_population)]
+        self.dna_bank = [([str(format(np.random.randint(0, 16**8, dtype=np.int64) , '08x')) for _ in range(self.gene_length)], np.random.rand()) for _ in range(self.max_population)]
 
         # 9 movement directions
         self.movement_names = {
@@ -55,14 +58,13 @@ class SimpleEvolutionEnv:
         self.input_keys = ["Slr", "Sfd", "Sg", "Age", "Rnd", "Blr", "Osc", "Bfd", "Plr", "Pop", "Pfd", "LPf", "LMy", "LBf", "LMx", "BDy", "Gen", "BDx", "Lx", "BD", "Ly"]
         self.output_keys = ["LPD", "Kill", "OSC", "SG", "Res", "Mfd", "Mrn", "Mrv", "MRL", "MX", "MY"]
 
-        self.pheromone_decay_rate = 0.8
+        self.pheromone_decay_rate = 0.9
         # self.random_states = [{key: np.random.rand() for key in self.input_keys} for _ in range(self.max_population)]
         self.reset()
     
-    def reset(self, keep_old_agents = True):
+    def reset(self):
 
-        if keep_old_agents:
-            self.generation_count += 1
+        self.generation_count += 1
         
         self.current_step = 0
         self.killings = 0
@@ -83,11 +85,11 @@ class SimpleEvolutionEnv:
             self.danger[:, -65:-20] = 1
             # self.danger[50:-50, 55:-55] = 0
 
-        if keep_old_agents:
-            # print("Keeping old agents")
-            dna_bank = self.dna_bank
-        else:
-            dna_bank = [[str(format(np.random.randint(0, 16**8, dtype=np.int64) , '08x')) for _ in range(self.gene_length)] for _ in range(self.max_population)]
+        # print("Keeping old agents")
+        dna_bank = self.dna_bank
+
+        # lets make proibability sum to 1
+        dna_bank = [(dna[0], dna[1] / sum([d[1] for d in dna_bank])) for dna in dna_bank]
 
         # random placement of agents where there is no blockage
         self.agents = [] 
@@ -100,7 +102,11 @@ class SimpleEvolutionEnv:
 
             if self.blockage[x, y] == 0 and self.world[x, y] == 0:
                 # Create agents with dna
-                dna_agent = dna_bank[np.random.choice(np.arange(0,len(dna_bank)))]
+
+                # we will choose dna based on probability of dna in dna_bank, which is (dna, probability) pair
+                dna_agent = dna_bank[np.random.choice(np.arange(0,len(dna_bank)), p = [d[1] for d in dna_bank])][0]
+                # dna_agent =  dna_bank[pop_counter] if pop_counter < len(dna_bank) else dna_bank[np.random.choice(np.arange(0,len(dna_bank)))]
+                # dna_agent = dna_bank[np.random.choice(np.arange(0,len(dna_bank)))]
                 # print("Adding agent with dna", dna_agent)
                 self.add_agent(Agent(self.number_hidden_neurons, dna_agent), x, y)
                 pop_counter += 1
@@ -118,7 +124,39 @@ class SimpleEvolutionEnv:
         self.survival_rate = self.population / self.max_population
 
         # save dnas
-        self.dna_bank = [agent.get_dna() for agent in self.agents]
+        self.dna_bank = [self.reproduce(agent) for agent in self.agents]
+
+    def reproduce(self, agent):
+
+        if self.reproduction != "sexual":
+            return (agent.dna, agent.fitness)
+        
+        agent1 = agent
+        forward_direction = self.direction_index[agent1.get_direction()]
+        forward_x = agent1.x + forward_direction[0] 
+        forward_x = (forward_x if forward_x >= 0 else 0) if forward_x < self.world_size[0] else self.world_size[0] - 1
+        forward_y = agent1.y + forward_direction[1]
+        forward_y = (forward_y if forward_y >= 0 else 0) if forward_y < self.world_size[1] else self.world_size[1] - 1
+        
+        if self.world[forward_x, forward_y] == 0 or (forward_x == agent1.x and forward_y == agent1.y):
+            new_dna = agent1.dna
+            fitness = agent1.fitness
+        else:
+            # create a new agent with dna from agent1 and agent2
+            agent2 = self.position_agents.get[(forward_x, forward_y)]
+            dna = []
+            for i in range(self.gene_length):    
+                dna1 = agent1.dna[i]
+                dna2 = agent2.dna[i]
+
+                # crossover
+                ratio_fitness = agent1.fitness / (agent1.fitness + agent2.fitness)
+                dna.append(dna1 if np.random.rand() < ratio_fitness else dna2)
+
+            new_dna = dna
+            fitness = (agent1.fitness + agent2.fitness) / 2
+
+        return (new_dna, fitness)
 
     def get_state(self):
 
@@ -175,7 +213,8 @@ class SimpleEvolutionEnv:
 
         for i in range(x_start, x_end):
             for j in range(y_start, y_end):
-                self.pheromone[i, j] += value
+                dist = np.linalg.norm(np.array([i - x, j - y]))
+                self.pheromone[i, j] += value / (dist + 1)
 
     def get_probe_value(self, property, x, y, direction, probe_distance = 5):
 
@@ -278,7 +317,8 @@ class SimpleEvolutionEnv:
         env_features["BDy"] = min(y, self.world_size[1] - y)
 
         # genetic similarity of forward neighbour
-        env_features["Gen"] = 0
+        forward_agent_dna = self.position_agents.get((forward_x, forward_y), None)
+        env_features["Gen"] = self.get_dna_similarity(agent.binary_dna, forward_agent_dna.binary_dna) if forward_agent_dna else 0
 
         # east/west border distance
         env_features["BDx"] = min(x, self.world_size[0] - x)
@@ -293,6 +333,10 @@ class SimpleEvolutionEnv:
         env_features["Ly"] = y
 
         return env_features
+    
+    def get_dna_similarity(self, dna1, dna2):
+        # return dot product of dna1 and dna2 divided by dna length
+        return np.dot(dna1, dna2) / (np.linalg.norm(dna1) ** 2 + 10e-12)
 
     def add_agent(self, agent, x, y):
         
@@ -301,7 +345,7 @@ class SimpleEvolutionEnv:
             assert False
 
         agent.set_position(x, y)
-        agent.mutate_dna(0.01)
+        agent.mutate_dna(self.mutation_rate)
         self.position_agents[(x, y)] = agent
         self.world[x, y] = 1
 
@@ -336,9 +380,10 @@ class SimpleEvolutionEnv:
         new_world = self.world.copy()
 
         # resolve killing:
+        random_number = np.random.rand()
         for k, agent in enumerate(self.agents):
 
-            if agent.get_responsiveness() < 0.5:
+            if agent.get_responsiveness() < random_number:
                 continue
             
             if agent_actions[k]["Kill"] > 0:
@@ -362,46 +407,46 @@ class SimpleEvolutionEnv:
             random_direction = self.direction_index[np.random.randint(1, 9)]
             right_direction = np.array([move_direction[1], -move_direction[0]])
 
-            if responsivenes >= 0.5:
-                # compute move direction 
-                move_fwd = agent_actions[k]["Mfd"] * move_direction
-                move_rnd = agent_actions[k]["Mrn"] * random_direction
-                move_rv = agent_actions[k]["Mrv"] * -move_direction
-                move_rl = agent_actions[k]["MRL"] * right_direction
-                move_x = agent_actions[k]["MX"] * self.direction_index[self.movement_names["east"]]
-                move_y = agent_actions[k]["MY"] * self.direction_index[self.movement_names["north"]]
+            # compute move direction 
+            move_fwd = agent_actions[k]["Mfd"] * move_direction
+            move_rnd = agent_actions[k]["Mrn"] * random_direction
+            move_rv = agent_actions[k]["Mrv"] * -move_direction
+            move_rl = agent_actions[k]["MRL"] * right_direction
+            move_x = agent_actions[k]["MX"] * self.direction_index[self.movement_names["east"]]
+            move_y = agent_actions[k]["MY"] * self.direction_index[self.movement_names["north"]]
 
-                # # resolve movement
-                move = move_fwd + move_rnd + move_rv + move_rl + move_x + move_y 
-                norm = np.linalg.norm(move)
+            # # resolve movement
+            move = move_fwd + move_rnd + move_rv + move_rl + move_x + move_y 
+            # norm = np.linalg.norm(move)
 
-                move_unit = np.round(move / (np.linalg.norm(move) + 10e-12)) # here x and y will be 0, 1 or -1
+            move_unit = np.round(move * responsivenes)# / (np.linalg.norm(move) + 10e-12)) # here x and y will be 0, 1 or -1
 
-                # find new move direction
-                new_x = int(x + move_unit[0])
-                new_y = int(y + move_unit[1])
-                new_x = (new_x if new_x >= 0 else 0) if new_x < self.world_size[0] else self.world_size[0] - 1
-                new_y = (new_y if new_y >= 0 else 0) if new_y < self.world_size[1] else self.world_size[1] - 1
+            # find new move direction
+            new_x = int(x + move_unit[0])
+            new_y = int(y + move_unit[1])
+            new_x = (new_x if new_x >= 0 else 0) if new_x < self.world_size[0] else self.world_size[0] - 1
+            new_y = (new_y if new_y >= 0 else 0) if new_y < self.world_size[1] else self.world_size[1] - 1
 
-                if new_x == x and new_y == y:
-                    # stay in same position
-                    self.new_world[x, y] = 1
-                else:
-                    # check if new position is valid
-                    world_val = self.world[new_x, new_y]
-                    new_world_val = new_world[new_x, new_y]
-                    block_val = self.blockage[new_x, new_y]
-                    if world_val == 0 and new_world_val == 0 and block_val == 0:
-                        # move agent
-                        agent.set_position(new_x, new_y)
-                        self.position_agents[(new_x, new_y)] = agent
-                        del self.position_agents[(x, y)]
-                        new_world[x, y] = 0
-                        new_world[new_x, new_y] = 1
+            if new_x == x and new_y == y:
+                # stay in same position
+                self.new_world[x, y] = 1
+            else:
+                # check if new position is valid
+                world_val = self.world[new_x, new_y]
+                new_world_val = new_world[new_x, new_y]
+                block_val = self.blockage[new_x, new_y]
+                if world_val == 0 and new_world_val == 0 and block_val == 0:
+                    # move agent
+                    agent.set_position(new_x, new_y)
+                    self.position_agents[(new_x, new_y)] = agent
+                    del self.position_agents[(x, y)]
+                    new_world[x, y] = 0
+                    new_world[new_x, new_y] = 1
                         
 
             # update pheromone
             self.pheromone[x, y] += agent_actions[k]["SG"] * responsivenes
+            # self.add_pheromone_value(x, y, agent_actions[k]["LPD"] * responsivenes, box_size = [2,2,2,2])
             
             # update agent age, oscillator, long probe distance and responsiveness
             agent.set_age(agent.age + 1)
@@ -409,9 +454,14 @@ class SimpleEvolutionEnv:
             agent.set_long_probe_distance(agent.long_probe_distance + agent_actions[k]["LPD"])
             agent.set_responsiveness(agent.responsiveness + agent_actions[k]["Res"])
 
-
-        # decay pheromone
-        self.pheromone = self.pheromone * self.pheromone_decay_rate
+        # diffuse and decay pheromone
+        self.pheromone = (self.pheromone + 0.1 * (
+            np.roll(self.pheromone, 1, axis=0) + 
+            np.roll(self.pheromone, -1, axis=0) + 
+            np.roll(self.pheromone, 1, axis=1) + 
+            np.roll(self.pheromone, -1, axis=1) - 
+            4 * self.pheromone
+        ))* self.pheromone_decay_rate
 
         # # update world
         self.world = new_world
@@ -454,13 +504,16 @@ class SimpleEvolutionEnv:
         
         # similarity 
         similar_dnas = []
-        sim_matrix = agent_dnas @ agent_dnas.T / agent_dnas.shape[1]
+        sim_matrix = agent_dnas @ agent_dnas.T
 
         # print max and min
         # print(sim_matrix.max(), sim_matrix.min())
 
+        diff_max = 4 * self.gene_length # genes can be different by 4 / 32 bits 
+        remaining_min = agent_dnas.shape[0] - diff_max
+
         for i in range(sim_matrix.shape[0]):
-            i_similar = np.where(sim_matrix[i][i+1:] > 0.45)[0]
+            i_similar = np.where(sim_matrix[i][i+1:] > remaining_min)[0]
             i_set = [i] + i_similar
             similar_dnas.append(i_set)
 
@@ -475,6 +528,9 @@ class SimpleEvolutionEnv:
 
         return dna_colors
 
-    def load_agents(self, dnas, generations):
+    def load_agent_dnas(self, dnas, generations):
         self.dna_bank = dnas
         self.generation_count = generations
+
+    def save_agent_dnas(self):
+        return [(agent.get_dna(), agent.fitness) for agent in self.agents], self.generation_count

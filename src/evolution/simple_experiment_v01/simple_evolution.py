@@ -7,19 +7,18 @@ import env as Environments
 import argparse
 
 def save_generations(env, image_list, suffix = ''):
-    agents = [agent.dna for agent in env.agents]
-    generations = env.generation_count
+    agent_dnas, generations = env.save_agent_dnas()
     images = image_list
 
-    pickle.dump(agents, open("saves/agents"+suffix+".pkl", "wb"))
+    pickle.dump(agent_dnas, open("saves/agents"+suffix+".pkl", "wb"))
     pickle.dump(generations, open("saves/generations"+suffix+".pkl", "wb"))
     pickle.dump(images, open("saves/images"+suffix+".pkl", "wb"))
 
 def load_generations(suffix = ''):
-    agents = pickle.load(open("saves/agents"+suffix+".pkl", "rb"))
+    agent_dnas = pickle.load(open("saves/agents"+suffix+".pkl", "rb"))
     generations = pickle.load(open("saves/generations"+suffix+".pkl", "rb"))
     images = pickle.load(open("saves/images"+suffix+".pkl", "rb"))
-    return agents, generations, images
+    return agent_dnas, generations, images
 
 if __name__ == '__main__':
     
@@ -31,22 +30,25 @@ if __name__ == '__main__':
     parser.add_argument('--load_suffix', type=str, default='~', help='Load suffix')
     parser.add_argument('--generation', type=int, default=50, help='Number of generations')
     parser.add_argument('--population', type=int, default=100, help='Population size')
-    parser.add_argument('--gene_length', type=int, default=16, help='Gene length')
-    parser.add_argument('--hidden_neurons', type=int, default=4, help='Number of hidden neurons')
+    parser.add_argument('--gene_length', type=int, default=32, help='Gene length')
+    parser.add_argument('--hidden_neurons', type=int, default=3, help='Number of hidden neurons')
     parser.add_argument('--max_steps', type=int, default=200, help='Max steps per generation')
+    parser.add_argument('--reproduction', type=str, default='asexual', help='[sexual, asexual]')
+    parser.add_argument('--mutation_rate', type=float, default=0.001, help='Mutation rate') 
 
     args = parser.parse_args()
 
     # sample run evolution environment
     env = Environments.SimpleEvolutionEnv(max_steps_per_generation=args.max_steps, population=args.population, 
-                                          number_hidden_neurons = args.hidden_neurons, gene_length = args.gene_length)
+                                          number_hidden_neurons = args.hidden_neurons, gene_length = args.gene_length,
+                                            reproduction = args.reproduction, mutation_rate = args.mutation_rate)
     
     if args.load_suffix != '~':
         print(f"Loading from {args.load_suffix}")
         try:
             load_suffix = args.load_suffix
             dnas, generations, _ = load_generations(load_suffix)
-            env.load_agents(dnas, generations)
+            env.load_agent_dnas(dnas, generations)
             print(f"Loaded {len(dnas)} agents")
         except:
             print(f"Failed to load from {args.load_suffix}, file may not exist new save will be the suffix.")
@@ -77,7 +79,7 @@ if __name__ == '__main__':
         done = False
         max_step = args.max_steps+1
         steps = 0
-        states = env.reset(keep_old_agents = True)
+        states = env.reset()
         while not done and steps < max_step:
             
             # print(print_txt + f"Steps:, {steps}")
